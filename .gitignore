@@ -3,3 +3,4 @@ python_varnish.egg-info
 build/
 dist/
 python_varnishadm.egg-info
+*.pyc
