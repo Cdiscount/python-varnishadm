@@ -332,7 +332,10 @@ class VarnishManager(object):
     def __init__(self, servers, secret):
         if not len(servers):
             logging.warn('No servers found, please declare some')
-        self.servers = servers
+        if isinstance(servers, tuple):
+           self.servers = servers
+        else:
+           self.servers = (servers, )
         self.secret = secret
 
     def run(self, *commands, **kwargs):
