@@ -35,6 +35,7 @@ from telnetlib import Telnet
 from threading import Thread
 from hashlib import sha256
 import logging
+import sys
 
 try:
     from httplib import HTTPConnection
@@ -51,6 +52,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s',
 )
 
+PYTHON3=True if sys.version_info[0] == 3 else False
 
 def http_purge_url(url):
     """
@@ -81,7 +83,10 @@ class VarnishHandler(Telnet):
             logging.error('Connecting failed with status: %i' % status)
 
     def _read(self):
-        (status, length), content = list(map(int, self.read_until('\n').split())), ''
+        if PYTHON3:
+            (status, length), content = list(map(int, self.read_until(b'\n').split())), b''
+        else:
+            (status, length), content = list(map(int, self.read_until('\n').split())), ''
         while len(content) < length:
             content += self.read_some()
         return (status, length), content[:-1]
@@ -92,19 +97,37 @@ class VarnishHandler(Telnet):
         return value is a tuple of ((status, length), content)
         """
         logging.debug('SENT: %s: %s' % (self.host, command))
-        self.write('%s\n' % command)
+        if PYTHON3:
+            self.write(bytes('%s\n' % command, 'utf8'))
+        else:
+            self.write('%s\n' % command)
         while 1:
-            buffer = self.read_until('\n').strip()
+            if PYTHON3:
+                buffer = self.read_until(b'\n').strip()
+            else:
+                buffer = self.read_until('\n').strip()
             if len(buffer):
                 break
         status, length = list(map(int, buffer.split()))
-        content = ''
+        if PYTHON3:
+            content = b''
+        else:
+            content = ''
 
         if status != 200:
-            raise VarnishError(status, 'Bad response code: {status} {text} ({command})'.format(status=status, text=self.read_until('\n').strip(), command=command))
+            if PYTHON3:
+                raise VarnishError(status, 'Bad response code: {status} {text} ({command})'.format(status=status, text=self.read_until(b'\n').strip().decode('utf8'), command=command))
+            else:
+                raise VarnishError(status, 'Bad response code: {status} {text} ({command})'.format(status=status, text=self.read_until(b'\n').strip(), command=command))
 
         while len(content) < length:
-            content += self.read_until('\n')
+            if PYTHON3:
+                content += self.read_until(b'\n')
+            else:
+                content += self.read_until(b'\n')
+
+        if PYTHON3:
+            content = content.decode('utf8')
         logging.debug('RECV: %s: %dB %s' % (status, length, content[:30]))
         self.read_eager()
         return (status, length), content
@@ -130,7 +153,11 @@ class VarnishHandler(Telnet):
 
     def auth(self, secret, content):
         challenge = content[:32]
-        response = sha256('%s\n%s%s\n' % (challenge, secret, challenge))
+        if PYTHON3:
+            challenge_resp = challenge + b'\n' +  bytes(secret, 'utf8') + challenge + b'\n'
+        else:
+            challenge_resp = '%s\n%s%s\n' % (challenge, secret, challenge)
+        response = sha256(challenge_resp)
         response_str = 'auth %s' % response.hexdigest()
 
         try:
